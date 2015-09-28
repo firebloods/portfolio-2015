@@ -1,0 +1,166 @@
+Processos e Threads
+
+
+Quando um aplicativo é iniciado e componentes da aplicação não tem quaisquer outros componentes em execução, o sistema Android inicia um novo processo Linux para o aplicativo com um único segmento de execução. Por padrão, todos os componentes do mesmo aplicativo executado no mesmo processo e thread (chamada de thread "main"). Se uma componente de aplicação e começa já existe um processo para essa aplicação (porque outro componente da aplicação existe), em seguida, o componente é iniciada dentro desse processo e usa o mesmo segmento de execução. No entanto, você pode mandar para diferentes componentes em seu aplicativo para ser executado em processos separados, e você pode criar tópicos adicionais para qualquer processo.
+Este documento discute como processos e threads trabalhar em um aplicativo Android.
+Processos
+
+Por padrão, todos os componentes do mesmo aplicativo executado no mesmo processo ea maioria das aplicações não deve mudar isso. No entanto, se você achar que você precisa para controlar quais transformar uma determinada componente pertence a, você pode fazê-lo no arquivo de manifesto.
+
+A entrada manifesto para cada tipo de componente element- <activity>, <serviço>, <receptor>, e <provider> -Supports um andróide: atributo processo que pode especificar um processo no qual esse componente deve ser executado. Você pode definir esse atributo para que cada componente é executado em seu próprio processo ou assim que alguns componentes compartilham um processo, enquanto outros não. Você também pode definir android: processo para que componentes de diferentes aplicativos são executados no mesmo que os aplicativos compartilham o mesmo ID de usuário e Linux são assinados com os mesmos certificados fornecido pelo processo.
+
+O elemento <application> também suporta um andróide: atributo processo, para definir um valor padrão que se aplica a todos os componentes.
+
+Android pode decidir encerrar um processo em algum momento, quando houver pouca memória e exigido por outros processos que estão mais imediatamente que servem o usuário. Componentes de aplicações em execução no processo que está mortos são consequentemente destruído. Um processo é iniciado novamente para os componentes quando há novamente trabalhar para eles fazerem.
+
+Ao decidir quais processos para matar, o sistema Android pesa sua importância relativa para o usuário. Por exemplo, é mais prontamente encerra um processo de atividades que não são mais visíveis na tela, em comparação com um processo de hospedagem actividades visíveis hospedagem. A decisão de terminar um processo, por conseguinte, depende do estado dos componentes que executam nesse processo. As regras usadas para decidir quais processos de denúncia for discutido abaixo.
+Ciclo de vida do processo
+
+O sistema Android tenta manter um processo de candidatura para o maior tempo possível, mas eventualmente precisa remover antigos processos para recuperar memória de processos novos ou mais importantes. Para determinar quais os processos para manter e que para matar, o sistema coloca cada processo em uma "hierarquia de importância" com base nos componentes em execução no processo eo estado desses componentes. Processos com o menor importância são eliminadas em primeiro lugar, em seguida, aqueles com a seguinte menor importância, e assim por diante, como necessários para recuperar recursos do sistema.
+
+Existem cinco níveis na hierarquia de importância. A lista que se segue apresenta os diferentes tipos de processos, a fim de importância (o primeiro processo é mais importante e é morto última):
+
+    Processo em primeiro plano
+
+    Um processo que é necessário para que o usuário está fazendo atualmente. Um processo é considerado como estando em primeiro plano, se qualquer uma das condições que se seguem:
+        Abriga uma atividade que o usuário está interagindo com (método onResume da Atividade () foi chamado).
+        Ele hospeda um serviço que está ligado à atividade que o usuário está interagindo com.
+        Abriga um serviço que está sendo executado "em primeiro plano" -o serviço chamou startForeground ().
+        Ele hospeda um serviço que está executando um dos seus retornos de chamada de ciclo de vida (onCreate (), onStart (), ou onDestroy ()).
+        Abriga um BroadcastReceiver que está executando seu método OnReceive ().
+
+    De um modo geral, apenas alguns processos de primeiro plano existir em qualquer dado momento. Eles são mortos apenas como um último recurso, se a memória não é tão baixo que eles não podem continuar a executar. Geralmente, nesse ponto, o dispositivo atingiu um estado de paginação de memória, por isso, matando alguns processos de primeiro plano é necessário para manter a interface do usuário responsivo.
+    Processo visível
+
+    Um processo que não tem quaisquer componentes de primeiro plano, mas ainda pode afectar o que o utilizador vê na tela. Um processo é considerada visível se qualquer uma das seguintes condições:
+        Abriga uma atividade que não está em primeiro plano, mas ainda é visível para o usuário (seu método onPause () foi chamado). Isto pode ocorrer, por exemplo, quando a actividade do primeiro plano iniciado um diálogo, o que permite que a actividade anterior para ser visto por trás dele.
+        Ele hospeda um serviço que está ligado a um (ou primeiro plano) atividade visível.
+
+    Um processo visível é considerada extremamente importante e não será morto a menos que isso é necessário para manter todos os processos em primeiro plano em execução.
+    Processo de serviço
+
+    Um processo que está executando um serviço que foi iniciado com o método StartService () e não se enquadra em nenhuma das duas categorias mais elevadas. Embora os processos de serviço não estão diretamente ligados a qualquer coisa que o usuário vê, eles são geralmente fazendo coisas que o usuário se preocupa (tais como reprodução de música em segundo plano ou download de dados na rede), de modo que o sistema mantém-los em execução, a menos que não há memória suficiente para retê-los, juntamente com todos os novos conhecimentos e processos visíveis.
+    Processo de fundo
+
+    Um processo segurando uma atividade que não é atualmente disponíveis ao usuário (método da atividade onStop () foi chamado). Esses processos não têm impacto direto sobre a experiência do usuário, eo sistema pode matá-los a qualquer momento para recuperar a memória para um primeiro plano, visível, ou processo de serviço. Normalmente, há muitos processos em segundo plano em execução, então eles são mantidos em uma LRU (menos usado recentemente) lista para garantir que o processo com a atividade que foi visto mais recentemente pelo usuário é o último a ser morto. Se uma atividade implementa seus métodos de ciclo de vida corretamente e salva seu estado atual, matando seu processo não terá um efeito visível sobre a experiência do usuário, porque quando o usuário navega de volta para a atividade, a atividade restaura todo o seu estado visível. Consulte o documento de Atividades para obter informações sobre como salvar e estado de restauração.
+    Processo vazio
+
+    Um processo que não detém quaisquer componentes do aplicativo ativo. A única razão para manter este tipo de processo vivo é para fins de armazenamento em cache, para melhorar o tempo de inicialização na próxima vez que um componente precisa ser executado nele. O sistema de mata frequentemente estes processos, a fim de equilibrar os recursos gerais do sistema entre caches de processo e os caches do kernel subjacentes.
+
+Android ocupa um processo no nível mais alto que pode, com base na importância dos componentes actualmente activas no processo. Por exemplo, se um processo hospeda um serviço e uma actividade visível, o processo é classificada como um processo visível, e não um processo de serviço.
+
+Além disso, a classificação de um processo pode ser aumentada porque outros processos são dependentes dela, um processo que está servindo outro processo nunca pode ser classificado menor do que o processo que está servindo. Por exemplo, se um fornecedor de conteúdos no processo A é um cliente do servi de processo B, ou se um serviço no processo A está ligado a um componente de processo B, processo A é sempre considerada pelo menos tão importante como o processo B.
+
+Porque um processo de execução de um serviço é mais alto do que um processo com atividades em segundo plano, uma atividade que inicia uma operação de longa duração pode fazer bem para iniciar um serviço para essa operação, em vez de simplesmente criar um trabalhador thread-especialmente se a operação será provavelmente durar mais que a actividade. Por exemplo, uma atividade que está o upload uma imagem para um site deve iniciar um serviço para efectuar o upload para que o carregamento pode continuar em segundo plano, mesmo se o usuário deixa a atividade. Usando um serviço garante que a operação terá pelo menos "processo de serviço" prioridade, independentemente do que acontece com a atividade. Esta é a mesma razão que receptores de radiodifusão deve empregar serviços ao invés de simplesmente colocar as operações demoradas em uma lista de discussão.
+Tópicos
+
+Quando uma aplicação é lançada, o sistema cria um segmento de execução para o aplicativo, chamado de "principal". Esta discussão é muito importante, pois é responsável por despachar eventos para os widgets de interface de usuário apropriados, incluindo os eventos de desenho. Ele também é o segmento em que seu aplicativo interage com componentes do kit de ferramentas UI Android (componentes dos pacotes android.widget e android.view). Como tal, o segmento principal também é chamado às vezes o segmento interface do usuário.
+
+O sistema não cria um segmento separado para cada instância de um componente. Todos os componentes que são executados no mesmo processo são instanciado no segmento interface do usuário, e chamadas do sistema para cada componente são expedidos dessa discussão. Consequentemente, os métodos que respondem a chamadas de retorno do sistema (como onKeyDown () para denunciar as ações do usuário ou um método de retorno de chamada do ciclo de vida) sempre executado no segmento interface do usuário do processo.
+
+Por exemplo, quando o usuário toca um botão na tela, segmento interface do usuário do aplicativo despacha o evento de toque para o widget, que por sua vez define seu estado pressionado e mensagens uma solicitação invalidate à fila de eventos. O segmento interface do usuário dequeues o pedido e notifica o widget que deve redesenhar próprio.
+
+Quando seu aplicativo realiza um trabalho intensivo em resposta à interação do usuário, este modelo de thread único pode produzir mau desempenho a menos que você implementar o aplicativo corretamente. Especificamente, se tudo está acontecendo no segmento interface do usuário, executando operações longas, como o acesso à rede ou consultas de dados irá bloquear toda a interface do usuário. Quando o segmento está bloqueado, não existem eventos podem ser despachadas, incluindo os eventos de desenho. Da perspectiva do usuário, o aplicativo parece travar. Pior ainda, se o segmento interface do usuário é bloqueada por mais de alguns segundos (cerca de 5 segundos atualmente) o usuário é apresentado com o infame "aplicativo não está respondendo" diálogo (ANR). O usuário pode então decidir parar o seu pedido e desinstalá-lo se eles são infelizes.
+
+Além disso, o kit de ferramentas UI Andoid não é thread-safe. Assim, você não deve manipular a interface do usuário a partir de um trabalhador thread-você deve fazer toda a manipulação de sua interface de usuário do segmento. Assim, há apenas duas regras para modelo de thread único do Android:
+
+    Não bloqueie o segmento interface do usuário
+    Não acesse o kit de ferramentas UI Android de fora do segmento interface do usuário
+
+Threads de trabalho
+
+Por causa do modelo de thread único descrito acima, é vital para a capacidade de resposta da interface do usuário do aplicativo que você não bloquear o segmento interface do usuário. Se você tem para executar operações que não são instantâneos, você deve certificar-se de fazê-las em tópicos separados ("fundo" ou "trabalhador" threads).
+
+Por exemplo, a seguir está um código para um ouvinte clique que transfere uma imagem de um segmento separado e exibe-lo em um ImageView:
+
+public void onClick (Ver v) {
+    new Thread (novo Runnable () {
+        public void run () {
+            Bitmap b = loadImageFromNetwork ("http://example.com/image.png");
+            mImageView.setImageBitmap (b);
+        }
+    .}) start ();
+}
+
+A princípio, isso parece funcionar bem, porque cria uma nova thread para lidar com a operação da rede. No entanto, ela viola a segunda regra do modelo single-threaded: não acessar o kit de ferramentas UI Android de fora da UI thread-este exemplo modifica o ImageView do segmento de trabalho em vez do segmento. Isto pode resultar em comportamento indefinido e inesperada, o que pode ser difícil para rastrear e demorado.
+
+Para corrigir esse problema, o Android oferece várias maneiras de acessar o segmento interface do usuário de outros segmentos. Aqui está uma lista de métodos que podem ajudar:
+
+    Activity.runOnUiThread (Runnable)
+    View.post (Runnable)
+    View.postDelayed (Runnable, long)
+
+Por exemplo, você pode corrigir o código acima usando o método View.post (Runnable):
+
+public void onClick (Ver v) {
+    new Thread (novo Runnable () {
+        public void run () {
+            bitmap Bitmap final =
+                    loadImageFromNetwork ("http://example.com/image.png");
+            mImageView.post (novo Runnable () {
+                public void run () {
+                    mImageView.setImageBitmap (bitmap);
+                }
+            });
+        }
+    .}) start ();
+}
+
+Agora, esta implementação é thread-safe: a operação da rede é feito a partir de uma thread separada, enquanto o ImageView é manipulado a partir do segmento.
+
+No entanto, como a complexidade da operação aumenta, este tipo de código pode ser complicado e difícil de manter. Para lidar com interações mais complexas com um segmento de trabalho, você pode considerar o uso de um Handler em seu segmento de trabalho, para processar mensagens entregues a partir do segmento. Talvez a melhor solução, porém, é estender a classe AsyncTask, o que simplifica a execução de tarefas thread de trabalho que precisam interagir com a interface do usuário.
+Usando AsyncTask
+
+AsyncTask permite que você execute o trabalho assíncrono em sua interface com o usuário. Ele executa as operações de bloqueio em um segmento de trabalho e, em seguida, publica os resultados no segmento interface do usuário, sem a necessidade de lidar com tópicos e / ou manipuladores de si mesmo.
+
+Para usá-lo, você deve subclasse AsyncTask e implementar o método de retorno doInBackground (), que é executado em um pool de threads em segundo plano. Para atualizar a interface do usuário, você deve implementar OnPostExecute (), que proporciona o resultado de doInBackground () e é executado no segmento interface do usuário, de modo que você pode atualizar com segurança o seu UI. Você pode então executar a tarefa chamando execute () do segmento.
+
+Por exemplo, você pode implementar o exemplo anterior utilizando AsyncTask desta forma:
+
+public void onClick (Ver v) {
+    . DownloadImageTask novo () execute ("http://example.com/image.png");
+}
+
+DownloadImageTask classe privada estende AsyncTask <String, Vazio, Bitmap> {
+    / ** O sistema chama isso para executar o trabalho em um segmento de trabalho e
+      * Entrega-lo aos parâmetros indicados para AsyncTask.execute () * /
+    protegidas Bitmap doInBackground (String) {... urls
+        retornar loadImageFromNetwork (urls [0]);
+    }
+
+    / ** O sistema chama isso para executar o trabalho no segmento interface do usuário e entrega
+      * O resultado de doInBackground () * /
+    OnPostExecute protected void (resultado Bitmap) {
+        mImageView.setImageBitmap (resultado);
+    }
+}
+
+Agora a interface do usuário é seguro e o código é mais simples, porque separa o trabalho para a parte que deve ser feito em um segmento de trabalho ea parte que deve ser feito sobre o segmento.
+
+Você deve ler a referência AsyncTask para um entendimento completo de como usar essa classe, mas aqui está uma visão geral de como funciona:
+
+    Você pode especificar o tipo dos parâmetros, os valores de progresso, eo valor final da tarefa, usando os genéricos
+    O método doInBackground () é executado automaticamente em um segmento de trabalho
+    OnPreExecute (), OnPostExecute (), e onProgressUpdate () são chamado no segmento interface do usuário
+    O valor retornado por doInBackground () é enviado para OnPostExecute ()
+    Você pode chamar publishProgress () a qualquer momento em doInBackground () para executar onProgressUpdate () no segmento interface do usuário
+    Você pode cancelar a tarefa a qualquer momento, de qualquer segmento
+
+Cuidado: Outro problema que você pode enfrentar ao utilizar um segmento de trabalho é reiniciado inesperadas na sua actividade, devido a uma alteração de configuração de tempo de execução (como quando o usuário muda a orientação da tela), que podem destruir o seu segmento de trabalho. Para ver como você pode persistir a sua tarefa durante uma dessas reiniciado e como cancelar corretamente a tarefa quando a atividade é destruído, ver o código fonte para a aplicação Prateleiras amostra.
+Métodos thread-safe
+
+Em algumas situações, os métodos que implementam pode ser chamado a partir de mais de um segmento, e, portanto, deve ser escrito para ser thread-safe.
+
+Isto é principalmente verdadeiro para os métodos que podem ser chamados remotamente tais como métodos em um serviço ligado. Quando uma chamada em um método implementado em um IBinder origina no mesmo processo em que o IBinder está em execução, o método é executado na linha do chamador. No entanto, quando a chamada é originária de um outro processo, o método é executado em um segmento escolhido de um conjunto de segmentos que o sistema mantém no mesmo processo que o IBinder (não é executada no segmento de interface do processo). Por exemplo, enquanto onBind de um método service () seria chamado de o segmento interface do usuário do processo do serviço, os métodos implementados no objeto que onBind () retorna (por exemplo, uma subclasse que implementa métodos RPC) seria chamado de segmentos no piscina. Uma vez que um serviço pode ter mais do que um cliente, mais do que um segmento de pool pode envolver o mesmo método IBinder ao mesmo tempo. Métodos IBinder deve, portanto, ser implementado para ser thread-safe.
+
+Da mesma forma, um provedor de conteúdo pode receber solicitações de dados que se originam em outros processos. Embora as classes ContentResolver e ContentProvider esconder os detalhes de como a comunicação entre processos é gerida, métodos ContentProvider que respondem a esses pedidos, a consulta métodos (), inserir (), delete (), update (), e getType () - são chamados a partir de um pool de threads no processo do provedor de conteúdo, e não o segmento interface do usuário para o processo. Como esses métodos pode ser chamado a partir de qualquer número de threads ao mesmo tempo, eles também devem ser implementadas para ser thread-safe.
+Comunicação entre processos
+
+Android oferece um mecanismo de comunicação entre processos (IPC) usando chamadas de procedimento remoto (RPC), em que um método é chamado por uma atividade ou outro componente da aplicação, mas executados remotamente (em outro processo), com qualquer resultado retornado de volta para o chamador. Isto implica em decomposição uma chamada de método e seus dados a um nível o sistema operacional pode un
+
+preender, transmiti-lo a partir do processo local e espaço de endereço para o processo remoto e espaço de endereço, em seguida, remontar e reencenando a chamada lá. Os valores de retorno são então transmitidos no sentido oposto. Android fornece todo o código para executar essas operações IPC, para que você possa se concentrar na definição e implementação da interface de programação RPC.
+
+Para executar IPC, a aplicação tem de se ligar a um serviço, utilizando bindService (). Para obter mais informações, consulte o Guia de Serviços de desenvolvedor.
+Receba notícias e dicas
+Blog Suporte
+Google Tradutor para empresas:Google Toolkit de tradução para appsTradutor de sites
